@@ -15,48 +15,27 @@ provider "aws" {
   
   }
 
-# resource "aws_internet_gateway" "gateway" {
-#      vpc_id = "${aws_vpc.vpc.id}"
-#  }
-
-
-# resource "aws_eip" "nat" {
-#   count = 1
-#   vpc = true
-# }
-
-module "vpc" {
-  source = "terraform-aws-modules/vpc/aws"
-
-  name = "vpc-01"
-  cidr = "172.31.1.0/24"
-
-  azs             = ["eu-west-2a", "eu-west-2b"]
-  private_subnets = ["172.31.1.0/24", "172.31.2.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24"]
-
-  enable_nat_gateway = true
+resource "aws_vpc" "EPAM_AWS_TF_Course_vpc" {
+  cidr_block = var.vpc_ntwk
+  instance_tenancy = "default"
 
   tags = {
-    Terraform = "true"
-    Environment = "HW_AWS+TF"
+    Name = "EPAM_AWS_TF_Course"
   }
 }
 
-
-
-
-
-
-
-
-
-resource "aws_instance" "server1" {
-  ami = "ami-0a2dc38dc30ba417e"
-  instance_type = "t2.micro"
+module "subnet_1" {
+  source = "./modules/subnets"
+  vpc_id_for_subnet = aws_vpc.EPAM_AWS_TF_Course_vpc.id
+  vpc_subnet = "10.10.10.0/24"
+  vpc_az = "eu-west-2a"
+  
 }
 
-resource "aws_instance" "server2" {
-  ami = "ami-0a2dc38dc30ba417e"
-  instance_type = "t2.micro"
+module "subnet_2" {
+  source = "./modules/subnets"
+  vpc_id_for_subnet = aws_vpc.EPAM_AWS_TF_Course_vpc.id
+  vpc_subnet = "10.10.20.0/24"
+  vpc_az = "eu-west-2b"
+  
 }
