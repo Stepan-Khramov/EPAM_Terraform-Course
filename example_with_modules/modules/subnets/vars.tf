@@ -1,8 +1,8 @@
-variable "vpc_subnet" {
+variable "vpc_subnet_cidr" {
   type = string
 }
 
-variable "vpc_az" {
+variable "subnet_az" {
   type = string
   
 }

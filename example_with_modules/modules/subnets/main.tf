@@ -15,12 +15,11 @@ provider "aws" {
   
   }
 
-resource "aws_instance" "server1" {
-  ami = "ami-0a2dc38dc30ba417e"
-  instance_type = "t2.micro"
-}
 
-resource "aws_instance" "server2" {
-  ami = "ami-0a2dc38dc30ba417e"
-  instance_type = "t2.micro"
-}
+resource "aws_subnet" "vpc_subnet" {
+  vpc_id = var.vpc_id_for_subnet
+  cidr_block = var.vpc_subnet_cidr
+  availability_zone = var.subnet_az
+
+
+  }
