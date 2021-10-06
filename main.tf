@@ -172,6 +172,45 @@ resource "aws_efs_mount_target" "efs_mount_target_wp_inst-02" {
   subnet_id = aws_subnet.subnet-02.id
 }
 
+# ========== DB security group ==============================
+# ==================================================================
+resource "aws_security_group" "wp_efs_sg" {
+  name = "wp_db_sg"
+  vpc_id = aws_vpc.vpc-01.id
+
+  ingress = [
+    {
+      description = "Allow private NFS."
+      from_port = 2049
+      to_port = 2049
+      protocol = "tcp"
+      cidr_blocks = [aws_vpc.vpc-01.cidr_block]
+      ipv6_cidr_blocks = []
+      prefix_list_ids = []
+      security_groups = []
+      self = false
+    },
+  ]
+
+  egress = [
+    {
+    description = "Allow all outgoing private traffic."
+    from_port = 0
+    to_port = 0
+    protocol = "-1"
+    cidr_blocks = [aws_vpc.vpc-01.cidr_block]
+    ipv6_cidr_blocks = []
+    prefix_list_ids = []
+    security_groups = []
+    self = false      
+    },
+  ]
+
+  tags = {
+    Name = "EPAM_AWS_TF_Course_wp_db_sg"
+    }
+}
+
 # ========== DB instance ===========================================
 # ==================================================================
 resource "aws_db_instance" "wp_db" {
@@ -263,12 +302,12 @@ resource "aws_instance" "wp_inst-01" {
   user_data = <<EOF
         #!/bin/bash
         sudo -i
-        yum install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget
+        yum install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget nfs-utils
         systemctl enable httpd
         mkdir -p /var/www/html
         chown -Rf apache:apache /var/www/html
         chmod -Rf 775 /var/www/html
-        echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html nfs vers=4.1,noresvport,notls 0 0" >> /etc/fstab
+        echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html      nfs     nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport 0 0" >> /etc/fstab
         mount -a
         cd /tmp
         wget https://www.wordpress.org/latest.tar.gz
@@ -308,7 +347,7 @@ resource "aws_instance" "wp_inst-02" {
         mkdir -p /var/www/html
         chown -Rf apache:apache /var/www/html
         chmod -Rf 775 /var/www/html
-        echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html efs vers=4.1,noresvport,notls 0 0" >> /etc/fstab
+        echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html      nfs     nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport 0 0" >> /etc/fstab
         mount -a
         cd /tmp
         wget https://www.wordpress.org/latest.tar.gz
