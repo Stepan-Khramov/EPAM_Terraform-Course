@@ -38,6 +38,15 @@ resource "aws_internet_gateway" "wp_igw" {
   }
 }
 
+# ========== Route to IGW =======================================
+# ==================================================================
+resource "aws_route" "route_to_igw" {
+  route_table_id            = aws_vpc.vpc-01.default_route_table_id
+  destination_cidr_block    = "0.0.0.0/0"
+  gateway_id = aws_internet_gateway.wp_igw.id
+  depends_on                = [aws_internet_gateway.wp_igw, aws_vpc.vpc-01]
+}
+
 # ========== Subnets ===============================================
 # ==================================================================
 resource "aws_subnet" "subnet-01" {
@@ -95,8 +104,7 @@ resource "aws_elb" "wp_lb" {
     
   }
 
-#   instances                   = [aws_instance.wp_inst-01.id, aws_instance.wp_inst-02.id]
-  instances                   = ["10.10.10.10", "10.10.20.10"]
+  instances                   = [aws_instance.wp_inst-01.id, aws_instance.wp_inst-02.id]
   cross_zone_load_balancing   = false
   connection_draining         = true
   connection_draining_timeout = 120
@@ -144,61 +152,23 @@ resource "aws_security_group" "wp_elb_sg" {
     Name = "EPAM_AWS_TF_Course_wp_elb_sg"
     }
 }
-# # ========== EIP ===================================================
-# # ==================================================================
-# resource "aws_eip" "lb_public_ip" {
-#   instance = aws_elb.wp_lb.id
-#   vpc      = true
-
-#   tags = {
-#     Name = "EPAM_AWS_TF_Course_wp_lb_public_ip"
-#   }
-# }
-
-# ========== Network interfaces======================================
-# ==================================================================
-# resource "aws_network_interface" "wp_inst-01_ntwk_int" {
-#   subnet_id = aws_subnet.subnet-01.id
-#   private_ip = "10.10.10.10"
-
-# #   attachment {
-# #     instance = aws_instance.wp_inst-01.id
-# #     device_index = 0
-# #   }
-#   tags = {
-#     Name = "EPAM_AWS_TF_Course_wp_inst_1_ntwk_int"
-#   }
-# }
-
-# resource "aws_network_interface" "wp_inst-02_ntwk_int" {
-#   subnet_id = aws_subnet.subnet-02.id
-#   private_ip = "10.10.20.10"
-
-# #   attachment {
-# #     instance = aws_instance.wp_inst-02.id
-# #     device_index = 0
-# #   }
-#   tags = {
-#     Name = "EPAM_AWS_TF_Course_wp_inst_2_ntwk_int"
-#   }
-# }
 
 # ========== EFS ===================================================
 # ==================================================================
-resource "aws_efs_file_system" "efs_for_wp_db" {
+resource "aws_efs_file_system" "efs_for_wp" {
   
   tags = {
-    Name = "EPAM_AWS_TF_Course_efs_for_wp_db"
+    Name = "EPAM_AWS_TF_Course_efs_for_wp"
     }
   }
 
 resource "aws_efs_mount_target" "efs_mount_target_wp_inst-01" {
-  file_system_id = aws_efs_file_system.efs_for_wp_db.id
+  file_system_id = aws_efs_file_system.efs_for_wp.id
   subnet_id = aws_subnet.subnet-01.id
   }
 
 resource "aws_efs_mount_target" "efs_mount_target_wp_inst-02" {
-  file_system_id = aws_efs_file_system.efs_for_wp_db.id
+  file_system_id = aws_efs_file_system.efs_for_wp.id
   subnet_id = aws_subnet.subnet-02.id
 }
 
@@ -282,35 +252,28 @@ resource "aws_security_group" "wp_db_sg" {
 # ========== Instances =============================================
 # ==================================================================
 resource "aws_instance" "wp_inst-01" {
-  ami = "ami-0dbec48abfe298cab"
+  ami = "ami-00230f74c48a9b8dd"
   instance_type = "t2.micro"
   vpc_security_group_ids = [aws_security_group.wp_inst_sg.id]
   subnet_id = aws_subnet.subnet-01.id
   private_ip = "10.10.10.10"
-#   network_interface {
-#     network_interface_id = aws_network_interface.wp_inst-01_ntwk_int.id
-#     device_index = 0
-#   }
+  associate_public_ip_address = true
   key_name = var.key_name
-  ebs_block_device {
-    device_name = "/dev/sdb"
-    volume_size = "10"
-    delete_on_termination = "true"
-    }
 
   user_data = <<EOF
         #!/bin/bash
-        echo "${aws_efs_file_system.efs_for_wp_db.dns_name}:/ /var/www/html nfs defaults,vers=4.1 0 0" >> /etc/fstab
-        dnf install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget
-        cd /tmp
-        wget https://www.wordpress.org/latest.tar.gz
-        mount -a
-        mkdir /var/www/html
-        tar xzvf /tmp/latest.tar.gz --strip 1 -C /var/www/html
-        rm /tmp/latest.tar.gz
+        sudo -i
+        yum install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget
+        systemctl enable httpd
+        mkdir -p /var/www/html
         chown -Rf apache:apache /var/www/html
         chmod -Rf 775 /var/www/html
-        systemctl enable httpd
+        echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html nfs vers=4.1,noresvport,notls 0 0" >> /etc/fstab
+        mount -a
+        cd /tmp
+        wget https://www.wordpress.org/latest.tar.gz
+        tar xzvf /tmp/latest.tar.gz --strip 1 -C /var/www/html
+        rm /tmp/latest.tar.gz
         sed -i 's/#ServerName www.example.com:80/ServerName web1.darhar-net.com:80/' /etc/httpd/conf/httpd.conf
         sed -i 's/ServerAdmin root@localhost/ServerAdmin admin@web1.darhar-net.com/' /etc/httpd/conf/httpd.conf
         sed -i 's/SELINUX=disabled/SELINUX=enforcing/' /etc/selinux/config
@@ -321,8 +284,6 @@ resource "aws_instance" "wp_inst-01" {
         systemctl start httpd
         firewall-cmd --zone=public --permanent --add-service=http
         firewall-cmd --reload
-        iptables -A INPUT -p tcp --dport 80 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-        iptables -A OUTPUT -p tcp --sport 80 -m conntrack --ctstate ESTABLISHED -j ACCEPT
     EOF
 
   tags = {
@@ -331,35 +292,28 @@ resource "aws_instance" "wp_inst-01" {
 }
 
 resource "aws_instance" "wp_inst-02" {
-  ami = "ami-0dbec48abfe298cab"
+  ami = "ami-00230f74c48a9b8dd"
   instance_type = "t2.micro"
   vpc_security_group_ids = [aws_security_group.wp_inst_sg.id]
   subnet_id = aws_subnet.subnet-02.id
   private_ip = "10.10.20.10"
-#   network_interface {
-#     network_interface_id = aws_network_interface.wp_inst-02_ntwk_int.id
-#     device_index = 0
-#   }
+  associate_public_ip_address = true
   key_name = var.key_name
-  ebs_block_device {
-    device_name = "/dev/sdb"
-    volume_size = "10"
-    delete_on_termination = "true"
-    }
 
   user_data = <<EOF
         #!/bin/bash
-        echo "${aws_efs_file_system.efs_for_wp_db.dns_name}:/ /var/www/html nfs defaults,vers=4.1 0 0" >> /etc/fstab
-        dnf install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget
-        cd /tmp
-        wget https://www.wordpress.org/latest.tar.gz
-        mount -a
-        mkdir /var/www/html
-        tar xzvf /tmp/latest.tar.gz --strip 1 -C /var/www/html
-        rm /tmp/latest.tar.gz
+        sudo -i
+        yum install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget
+        systemctl enable httpd
+        mkdir -p /var/www/html
         chown -Rf apache:apache /var/www/html
         chmod -Rf 775 /var/www/html
-        systemctl enable httpd
+        echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html efs vers=4.1,noresvport,notls 0 0" >> /etc/fstab
+        mount -a
+        cd /tmp
+        wget https://www.wordpress.org/latest.tar.gz
+        tar xzvf /tmp/latest.tar.gz --strip 1 -C /var/www/html
+        rm /tmp/latest.tar.gz
         sed -i 's/#ServerName www.example.com:80/ServerName web1.darhar-net.com:80/' /etc/httpd/conf/httpd.conf
         sed -i 's/ServerAdmin root@localhost/ServerAdmin admin@web1.darhar-net.com/' /etc/httpd/conf/httpd.conf
         sed -i 's/SELINUX=disabled/SELINUX=enforcing/' /etc/selinux/config
@@ -370,8 +324,6 @@ resource "aws_instance" "wp_inst-02" {
         systemctl start httpd
         firewall-cmd --zone=public --permanent --add-service=http
         firewall-cmd --reload
-        iptables -A INPUT -p tcp --dport 80 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-        iptables -A OUTPUT -p tcp --sport 80 -m conntrack --ctstate ESTABLISHED -j ACCEPT
     EOF
 
   tags = {
