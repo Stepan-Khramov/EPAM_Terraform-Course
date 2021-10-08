@@ -22,6 +22,8 @@ provider "aws" {
 resource "aws_vpc" "vpc-01" {
   cidr_block = "10.10.0.0/16"
   instance_tenancy = "default"
+  enable_dns_hostnames = true
+  enable_dns_support = true
 
   tags = {
     Name = "EPAM_AWS_TF_Course_vpc-01"
@@ -99,7 +101,7 @@ resource "aws_elb" "wp_lb" {
     healthy_threshold   = 5
     unhealthy_threshold = 2
     timeout             = 5
-    target              = "HTTP:80/"
+    target              = "HTTP:80/test.html"
     interval            = 10
     
   }
@@ -165,17 +167,19 @@ resource "aws_efs_file_system" "efs_for_wp" {
 resource "aws_efs_mount_target" "efs_mount_target_wp_inst-01" {
   file_system_id = aws_efs_file_system.efs_for_wp.id
   subnet_id = aws_subnet.subnet-01.id
+  security_groups = [aws_security_group.wp_efs_sg.id]
   }
 
 resource "aws_efs_mount_target" "efs_mount_target_wp_inst-02" {
   file_system_id = aws_efs_file_system.efs_for_wp.id
   subnet_id = aws_subnet.subnet-02.id
+  security_groups = [aws_security_group.wp_efs_sg.id]
 }
 
-# ========== DB security group ==============================
+# ========== EFS security group ==============================
 # ==================================================================
 resource "aws_security_group" "wp_efs_sg" {
-  name = "wp_db_sg"
+  name = "wp_efs_sg"
   vpc_id = aws_vpc.vpc-01.id
 
   ingress = [
@@ -207,7 +211,7 @@ resource "aws_security_group" "wp_efs_sg" {
   ]
 
   tags = {
-    Name = "EPAM_AWS_TF_Course_wp_db_sg"
+    Name = "EPAM_AWS_TF_Course_wp_efs_sg"
     }
 }
 
@@ -227,6 +231,7 @@ resource "aws_db_instance" "wp_db" {
   password = "dbpassword"
   parameter_group_name = "default.mysql5.7"
   skip_final_snapshot = true
+  depends_on = [aws_efs_file_system.efs_for_wp]
    
   tags = {
       Name = "EPAM_AWS_TF_Course_wp_db"
@@ -250,19 +255,7 @@ resource "aws_security_group" "wp_db_sg" {
       prefix_list_ids = []
       security_groups = []
       self = false
-    },
-
-    {
-      description = "Allow private NFS."
-      from_port = 2049
-      to_port = 2049
-      protocol = "tcp"
-      cidr_blocks = [aws_vpc.vpc-01.cidr_block]
-      ipv6_cidr_blocks = []
-      prefix_list_ids = []
-      security_groups = []
-      self = false
-    },
+    }
   ]
 
   egress = [
@@ -276,7 +269,7 @@ resource "aws_security_group" "wp_db_sg" {
     prefix_list_ids = []
     security_groups = []
     self = false      
-    },
+    }
   ]
 
   tags = {
@@ -284,45 +277,47 @@ resource "aws_security_group" "wp_db_sg" {
     }
 }
 
-#  resource "aws_vpc_endpoint" "vpc-01_endpoint" {
-
-# }
-
 # ========== Instances =============================================
 # ==================================================================
 resource "aws_instance" "wp_inst-01" {
-  ami = "ami-00230f74c48a9b8dd"
+  ami = "ami-08095fbc7037048f3"
   instance_type = "t2.micro"
   vpc_security_group_ids = [aws_security_group.wp_inst_sg.id]
   subnet_id = aws_subnet.subnet-01.id
   private_ip = "10.10.10.10"
   associate_public_ip_address = true
   key_name = var.key_name
+  depends_on = [aws_db_instance.wp_db]
 
   user_data = <<EOF
         #!/bin/bash
-        sudo -i
-        yum install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget nfs-utils
+        # sudo -i
+        yum install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget nfs-utils firewalld
         systemctl enable httpd
+        systemctl enable firewalld
         mkdir -p /var/www/html
-        chown -Rf apache:apache /var/www/html
-        chmod -Rf 775 /var/www/html
+        chown -Rf apache:apache /var/www/html/
+        chmod -Rf 775 /var/www/html/
         echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html      nfs     nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport 0 0" >> /etc/fstab
         mount -a
         cd /tmp
         wget https://www.wordpress.org/latest.tar.gz
         tar xzvf /tmp/latest.tar.gz --strip 1 -C /var/www/html
-        rm /tmp/latest.tar.gz
-        sed -i 's/#ServerName www.example.com:80/ServerName web1.darhar-net.com:80/' /etc/httpd/conf/httpd.conf
-        sed -i 's/ServerAdmin root@localhost/ServerAdmin admin@web1.darhar-net.com/' /etc/httpd/conf/httpd.conf
+        rm -rf /tmp/latest.tar.gz
+        sed -i 's/#ServerName www.example.com:80/ServerName ${aws_efs_file_system.efs_for_wp.dns_name}:80/' /etc/httpd/conf/httpd.conf
+        sed -i 's/ServerAdmin root@localhost/ServerAdmin admin@${aws_efs_file_system.efs_for_wp.dns_name}/' /etc/httpd/conf/httpd.conf
         sed -i 's/SELINUX=disabled/SELINUX=enforcing/' /etc/selinux/config
+        echo "test_inst-01" >> /var/www/html/test.html
         semanage fcontext -a -t httpd_sys_rw_content_t "/var/www/html(/.*)?"
-        restorecon -Rv /var/www/html
+        restorecon -Rv /var/www/html/
         setsebool -P httpd_can_network_connect 1
         setsebool -P httpd_can_network_connect_db 1
+        setsebool -P httpd_use_nfs=1
         systemctl start httpd
+        systemctl start firewalld
         firewall-cmd --zone=public --permanent --add-service=http
         firewall-cmd --reload
+        reboot
     EOF
 
   tags = {
@@ -331,35 +326,38 @@ resource "aws_instance" "wp_inst-01" {
 }
 
 resource "aws_instance" "wp_inst-02" {
-  ami = "ami-00230f74c48a9b8dd"
+  ami = "ami-08095fbc7037048f3"
   instance_type = "t2.micro"
   vpc_security_group_ids = [aws_security_group.wp_inst_sg.id]
   subnet_id = aws_subnet.subnet-02.id
   private_ip = "10.10.20.10"
   associate_public_ip_address = true
   key_name = var.key_name
+  depends_on = [aws_db_instance.wp_db]
 
   user_data = <<EOF
         #!/bin/bash
-        sudo -i
+        # sudo -i
         yum install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget
         systemctl enable httpd
         mkdir -p /var/www/html
-        chown -Rf apache:apache /var/www/html
-        chmod -Rf 775 /var/www/html
+        chown -Rf apache:apache /var/www/html/
+        chmod -Rf 775 /var/www/html/
         echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html      nfs     nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport 0 0" >> /etc/fstab
         mount -a
         cd /tmp
         wget https://www.wordpress.org/latest.tar.gz
         tar xzvf /tmp/latest.tar.gz --strip 1 -C /var/www/html
-        rm /tmp/latest.tar.gz
-        sed -i 's/#ServerName www.example.com:80/ServerName web1.darhar-net.com:80/' /etc/httpd/conf/httpd.conf
-        sed -i 's/ServerAdmin root@localhost/ServerAdmin admin@web1.darhar-net.com/' /etc/httpd/conf/httpd.conf
+        rm -rf /tmp/latest.tar.gz
+        sed -i 's/#ServerName www.example.com:80/ServerName ${aws_efs_file_system.efs_for_wp.dns_name}:80/' /etc/httpd/conf/httpd.conf
+        sed -i 's/ServerAdmin root@localhost/ServerAdmin admin@${aws_efs_file_system.efs_for_wp.dns_name}/' /etc/httpd/conf/httpd.conf
         sed -i 's/SELINUX=disabled/SELINUX=enforcing/' /etc/selinux/config
+        echo "test_inst-02" >> /var/www/html/test.html
         semanage fcontext -a -t httpd_sys_rw_content_t "/var/www/html(/.*)?"
-        restorecon -Rv /var/www/html
+        restorecon -Rv /var/www/html/
         setsebool -P httpd_can_network_connect 1
         setsebool -P httpd_can_network_connect_db 1
+        setsebool -P httpd_use_nfs=1
         systemctl start httpd
         firewall-cmd --zone=public --permanent --add-service=http
         firewall-cmd --reload
@@ -379,7 +377,7 @@ resource "aws_security_group" "wp_inst_sg" {
   ingress = [
     {
       # ===== SSH =====
-      description = "Allow SSH."
+      description = "Allow SSH - IPv4."
       from_port = 22
       to_port = 22
       protocol = "tcp"
@@ -391,11 +389,11 @@ resource "aws_security_group" "wp_inst_sg" {
     },
 
     {
-      description = "Allow HTTP."
+      description = "Allow HTTP - IPv4."
       from_port = 80
       to_port = 80
       protocol = "tcp"
-      cidr_blocks = ["10.0.0.0/16", "185.44.13.36/32", "95.165.8.101/32"]
+      cidr_blocks = ["10.10.0.0/16", "185.44.13.36/32", "95.165.8.101/32"]
       ipv6_cidr_blocks = []
       prefix_list_ids = []
       security_groups = []
@@ -403,28 +401,16 @@ resource "aws_security_group" "wp_inst_sg" {
     },
 
     {
-      description = "Allow SQL."
-      from_port = 3306
-      to_port = 3306
+      description = "Allow HTTP - IPv4."
+      from_port = 80
+      to_port = 80
       protocol = "tcp"
-      cidr_blocks = [aws_vpc.vpc-01.cidr_block]
+      cidr_blocks = ["10.10.0.0/16", "185.44.13.36/32", "95.165.8.101/32"]
       ipv6_cidr_blocks = []
       prefix_list_ids = []
       security_groups = []
       self = false
-    },
-
-    {
-      description = "Allow NFS."
-      from_port = 2049
-      to_port = 2049
-      protocol = "tcp"
-      cidr_blocks = [aws_vpc.vpc-01.cidr_block]
-      ipv6_cidr_blocks = []
-      prefix_list_ids = []
-      security_groups = []
-      self = false
-    },
+    }
   ]
 
   egress = [
@@ -433,7 +419,7 @@ resource "aws_security_group" "wp_inst_sg" {
     from_port = 0
     to_port = 0
     protocol = "-1"
-    cidr_blocks = [aws_vpc.vpc-01.cidr_block]
+    cidr_blocks = ["0.0.0.0/0"]
     ipv6_cidr_blocks = []
     prefix_list_ids = []
     security_groups = []
