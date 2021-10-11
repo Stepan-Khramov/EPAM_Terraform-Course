@@ -284,40 +284,18 @@ resource "aws_instance" "wp_inst-01" {
   instance_type = "t2.micro"
   vpc_security_group_ids = [aws_security_group.wp_inst_sg.id]
   subnet_id = aws_subnet.subnet-01.id
-  private_ip = "10.10.10.10"
+#   private_ip = "10.10.10.10"
   associate_public_ip_address = true
   key_name = var.key_name
   depends_on = [aws_db_instance.wp_db]
 
-  user_data = <<EOF
-        #!/bin/bash
-        # sudo -i
-        yum install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget nfs-utils firewalld
-        systemctl enable httpd
-        systemctl enable firewalld
-        mkdir -p /var/www/html
-        chown -Rf apache:apache /var/www/html/
-        chmod -Rf 775 /var/www/html/
-        echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html      nfs     nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport 0 0" >> /etc/fstab
-        mount -a
-        cd /tmp
-        wget https://www.wordpress.org/latest.tar.gz
-        tar xzvf /tmp/latest.tar.gz --strip 1 -C /var/www/html
-        rm -rf /tmp/latest.tar.gz
-        sed -i 's/#ServerName www.example.com:80/ServerName ${aws_efs_file_system.efs_for_wp.dns_name}:80/' /etc/httpd/conf/httpd.conf
-        sed -i 's/ServerAdmin root@localhost/ServerAdmin admin@${aws_efs_file_system.efs_for_wp.dns_name}/' /etc/httpd/conf/httpd.conf
-        sed -i 's/SELINUX=disabled/SELINUX=enforcing/' /etc/selinux/config
-        echo "test_inst-01" >> /var/www/html/test.html
-        semanage fcontext -a -t httpd_sys_rw_content_t "/var/www/html(/.*)?"
-        restorecon -Rv /var/www/html/
-        setsebool -P httpd_can_network_connect 1
-        setsebool -P httpd_can_network_connect_db 1
-        setsebool -P httpd_use_nfs=1
-        systemctl start httpd
-        systemctl start firewalld
-        firewall-cmd --zone=public --permanent --add-service=http
-        firewall-cmd --reload
-        reboot
+  provisioner "file" {
+    source = "bootstrap.sh"
+    destination = "/tmp/bootstrap.sh"
+    }  
+  
+  user_data = <<-EOF
+    sudo /tmp/boostrap.sh
     EOF
 
   tags = {
@@ -330,38 +308,40 @@ resource "aws_instance" "wp_inst-02" {
   instance_type = "t2.micro"
   vpc_security_group_ids = [aws_security_group.wp_inst_sg.id]
   subnet_id = aws_subnet.subnet-02.id
-  private_ip = "10.10.20.10"
+#   private_ip = "10.10.20.10"
   associate_public_ip_address = true
   key_name = var.key_name
   depends_on = [aws_db_instance.wp_db]
+  
 
-  user_data = <<EOF
-        #!/bin/bash
-        # sudo -i
-        yum install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget
-        systemctl enable httpd
-        mkdir -p /var/www/html
-        chown -Rf apache:apache /var/www/html/
-        chmod -Rf 775 /var/www/html/
-        echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html      nfs     nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport 0 0" >> /etc/fstab
-        mount -a
-        cd /tmp
-        wget https://www.wordpress.org/latest.tar.gz
-        tar xzvf /tmp/latest.tar.gz --strip 1 -C /var/www/html
-        rm -rf /tmp/latest.tar.gz
-        sed -i 's/#ServerName www.example.com:80/ServerName ${aws_efs_file_system.efs_for_wp.dns_name}:80/' /etc/httpd/conf/httpd.conf
-        sed -i 's/ServerAdmin root@localhost/ServerAdmin admin@${aws_efs_file_system.efs_for_wp.dns_name}/' /etc/httpd/conf/httpd.conf
-        sed -i 's/SELINUX=disabled/SELINUX=enforcing/' /etc/selinux/config
-        echo "test_inst-02" >> /var/www/html/test.html
-        semanage fcontext -a -t httpd_sys_rw_content_t "/var/www/html(/.*)?"
-        restorecon -Rv /var/www/html/
-        setsebool -P httpd_can_network_connect 1
-        setsebool -P httpd_can_network_connect_db 1
-        setsebool -P httpd_use_nfs=1
-        systemctl start httpd
-        firewall-cmd --zone=public --permanent --add-service=http
-        firewall-cmd --reload
-    EOF
+#   user_data = <<-EOF
+#     #!/bin/bash
+#     yum install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget nfs-utils firewalld policycoreutils-python-utils
+#     systemctl enable httpd
+#     systemctl enable firewalld
+#     mkdir -p /var/www/html
+#     echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html      nfs     nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport 0 0" >> /etc/fstab
+#     mount -a
+#     echo "test_inst-02" >> /var/www/html/test.html
+#     chown -Rf apache:apache /var/www/html/
+#     chmod -Rf 775 /var/www/html/
+#     sudo systemctl start httpd
+#     sudo systemctl start firewalld
+#     sudo firewall-cmd --zone=public --permanent --add-service=http
+#     sudo firewall-cmd --reload
+#     cd /tmp
+#     wget https://www.wordpress.org/latest.tar.gz
+#     tar xzvf /tmp/latest.tar.gz --strip 1 -C /var/www/html
+#     rm -rf /tmp/latest.tar.gz
+#     sed -i 's/#ServerName www.example.com:80/ServerName ${aws_elb.wp_lb.dns_name}:80/' /etc/httpd/conf/httpd.conf
+#     sed -i 's/ServerAdmin root@localhost/ServerAdmin admin@${aws_elb.wp_lb.dns_name}/' /etc/httpd/conf/httpd.conf
+#     sed -i 's/SELINUX=disabled/SELINUX=enforcing/' /etc/selinux/config
+#     sudo setsebool -P httpd_can_network_connect 1
+#     sudo setsebool -P httpd_can_network_connect_db 1
+#     sudo setsebool -P httpd_use_nfs=1
+#     sudo semanage fcontext -a -t httpd_sys_rw_content_t "/var/www/html(/.*)?"
+#     sudo restorecon -Rv /var/www/html/
+#     EOF
 
   tags = {
     Name = "EPAM_AWS_TF_Course_wp_inst-02"
