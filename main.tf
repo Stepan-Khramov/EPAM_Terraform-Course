@@ -101,7 +101,7 @@ resource "aws_elb" "wp_lb" {
     healthy_threshold   = 5
     unhealthy_threshold = 2
     timeout             = 5
-    target              = "HTTP:80/test.html"
+    target              = "HTTP:80/readme.html"
     interval            = 10
     
   }
@@ -279,25 +279,41 @@ resource "aws_security_group" "wp_db_sg" {
 
 # ========== Instances =============================================
 # ==================================================================
+
+data "template_file" "init_cfg" {
+  template = file("./cloud-init.yaml")
+  vars = {
+    "aws_efs_dns_name" = "${aws_efs_file_system.efs_for_wp.dns_name}"
+  }
+}
+
+data "template_cloudinit_config" "cloudinit_cfg" {
+  gzip          = false
+  base64_encode = false
+
+  part {
+    filename     = "./cloud-init.yaml"
+    content_type = "text/cloud-config"
+    content      = data.template_file.init_cfg.rendered
+  }
+
+  # part {
+  #   content_type = "text/x-shellscript"
+  #   content      = data.template_file.shell-script.rendered
+  # }
+}
+
 resource "aws_instance" "wp_inst-01" {
   ami = "ami-08095fbc7037048f3"
   instance_type = "t2.micro"
   vpc_security_group_ids = [aws_security_group.wp_inst_sg.id]
   subnet_id = aws_subnet.subnet-01.id
-#   private_ip = "10.10.10.10"
   associate_public_ip_address = true
   key_name = var.key_name
   depends_on = [aws_db_instance.wp_db]
 
-  provisioner "file" {
-    source = "bootstrap.sh"
-    destination = "/tmp/bootstrap.sh"
-    }  
+  user_data = data.template_cloudinit_config.cloudinit_cfg.rendered
   
-  user_data = <<-EOF
-    sudo /tmp/boostrap.sh
-    EOF
-
   tags = {
     Name = "EPAM_AWS_TF_Course_wp_inst-01"
     }
@@ -308,40 +324,11 @@ resource "aws_instance" "wp_inst-02" {
   instance_type = "t2.micro"
   vpc_security_group_ids = [aws_security_group.wp_inst_sg.id]
   subnet_id = aws_subnet.subnet-02.id
-#   private_ip = "10.10.20.10"
   associate_public_ip_address = true
   key_name = var.key_name
   depends_on = [aws_db_instance.wp_db]
   
-
-#   user_data = <<-EOF
-#     #!/bin/bash
-#     yum install -y httpd httpd-tools php php-cli php-json php-gd php-mbstring php-pdo php-xml php-mysqlnd php-pecl-zip wget nfs-utils firewalld policycoreutils-python-utils
-#     systemctl enable httpd
-#     systemctl enable firewalld
-#     mkdir -p /var/www/html
-#     echo "${aws_efs_file_system.efs_for_wp.dns_name}:/ /var/www/html      nfs     nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport 0 0" >> /etc/fstab
-#     mount -a
-#     echo "test_inst-02" >> /var/www/html/test.html
-#     chown -Rf apache:apache /var/www/html/
-#     chmod -Rf 775 /var/www/html/
-#     sudo systemctl start httpd
-#     sudo systemctl start firewalld
-#     sudo firewall-cmd --zone=public --permanent --add-service=http
-#     sudo firewall-cmd --reload
-#     cd /tmp
-#     wget https://www.wordpress.org/latest.tar.gz
-#     tar xzvf /tmp/latest.tar.gz --strip 1 -C /var/www/html
-#     rm -rf /tmp/latest.tar.gz
-#     sed -i 's/#ServerName www.example.com:80/ServerName ${aws_elb.wp_lb.dns_name}:80/' /etc/httpd/conf/httpd.conf
-#     sed -i 's/ServerAdmin root@localhost/ServerAdmin admin@${aws_elb.wp_lb.dns_name}/' /etc/httpd/conf/httpd.conf
-#     sed -i 's/SELINUX=disabled/SELINUX=enforcing/' /etc/selinux/config
-#     sudo setsebool -P httpd_can_network_connect 1
-#     sudo setsebool -P httpd_can_network_connect_db 1
-#     sudo setsebool -P httpd_use_nfs=1
-#     sudo semanage fcontext -a -t httpd_sys_rw_content_t "/var/www/html(/.*)?"
-#     sudo restorecon -Rv /var/www/html/
-#     EOF
+  user_data = data.template_cloudinit_config.cloudinit_cfg.rendered
 
   tags = {
     Name = "EPAM_AWS_TF_Course_wp_inst-02"

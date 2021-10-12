@@ -1,0 +1,43 @@
+#cloud-config
+
+packages:
+  - httpd
+  - httpd-tools
+  - php
+  - php-cli
+  - php-json
+  - php-gd
+  - php-mbstring
+  - php-pdo
+  - php-xml
+  - php-mysqlnd
+  - php-pecl-zip
+  - wget
+  - nfs-utils
+  - firewalld
+  - policycoreutils-python-utils
+
+runcmd:
+  - sudo firewall-offline-cmd --zone=public --add-service=http
+  - sudo systemctl enable httpd
+  - sudo systemctl enable firewalld
+  - sudo systemctl start httpd
+  - sudo systemctl start firewalld
+  - sudo mkdir -p /var/www/html
+  - sudo echo "${aws_efs_dns_name}:/ /var/www/html        nfs   nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport 0 0" >> /etc/fstab
+  - sudo mount -a
+  - sudo chown -Rf apache:apache /var/www/html/
+  - sudo chmod -Rf 775 /var/www/html/
+  - sudo mkdir -p /run/cloud_init/
+  - cd /run/cloud_init/
+  - sudo wget https://www.wordpress.org/latest.tar.gz
+  - sudo tar xzvf /run/cloud_init/latest.tar.gz --strip 1 -C /var/www/html
+  - sudo rm -rf /run/cloud_init/latest.tar.gz
+  - sudo sed -i 's/SELINUX=disabled/SELINUX=enforcing/' /etc/selinux/config
+  - sudo setsebool -P httpd_can_network_connect 1
+  - sudo setsebool -P httpd_can_network_connect_db 1
+  - sudo setsebool -P httpd_use_nfs=1
+  - sudo semanage fcontext -a -t httpd_sys_rw_content_t "/var/www/html(/.*)?"
+  - sudo restorecon -Rv /var/www/html/
+
+final_message: "The system is finally up, after $UPTIME seconds"
