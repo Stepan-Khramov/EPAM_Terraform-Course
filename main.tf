@@ -30,7 +30,7 @@ resource "aws_vpc" "vpc-01" {
   }
 }
 
-# ========== Intenet gateway =======================================
+# ========== Internet gateway =======================================
 # ==================================================================
 resource "aws_internet_gateway" "wp_igw" {
   vpc_id = aws_vpc.vpc-01.id
@@ -226,9 +226,9 @@ resource "aws_db_instance" "wp_db" {
   vpc_security_group_ids = [aws_security_group.wp_db_sg.id]
   availability_zone = "eu-west-2a"
   db_subnet_group_name = aws_db_subnet_group.wp_db_subnet_group.id
-  name = "wp_db"
-  username = "dbadmin"
-  password = "dbpassword"
+  name = var.db_name
+  username = var.db_user
+  password = var.db_password
   parameter_group_name = "default.mysql5.7"
   skip_final_snapshot = true
   depends_on = [aws_efs_file_system.efs_for_wp]
@@ -284,6 +284,10 @@ data "template_file" "init_cfg" {
   template = file("./cloud-init.yaml")
   vars = {
     "aws_efs_dns_name" = "${aws_efs_file_system.efs_for_wp.dns_name}"
+    "db_name" = "${var.db_name}"
+    "db_user" = "${var.db_user}"
+    "db_password" = "${var.db_password}"
+    "db_host" = "${aws_db_instance.wp_db.address}"
   }
 }
 

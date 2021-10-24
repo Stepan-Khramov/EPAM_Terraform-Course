@@ -1,5 +1,107 @@
 #cloud-config
 
+write_files:
+  - path: /run/wp-config.php
+    owner: nobody:nobody
+    permissions: '0644'
+    content: |
+      <?php
+      /**
+      * The base configuration for WordPress
+      *
+      * The wp-config.php creation script uses this file during the installation.
+      * You don't have to use the web site, you can copy this file to "wp-config.php"
+      * and fill in the values.
+      *
+      * This file contains the following configurations:
+      *
+      * * MySQL settings
+      * * Secret keys
+      * * Database table prefix
+      * * ABSPATH
+      *
+      * @link https://wordpress.org/support/article/editing-wp-config-php/
+      *
+      * @package WordPress
+      */
+
+      // ** MySQL settings - You can get this info from your web host ** //
+      /** The name of the database for WordPress */
+      define( 'DB_NAME', '${db_name}' );
+
+      /** MySQL database username */
+      define( 'DB_USER', '${db_user}' );
+
+      /** MySQL database password */
+      define( 'DB_PASSWORD', '${db_password}' );
+
+      /** MySQL hostname */
+      define( 'DB_HOST', '${db_host}' );
+
+      /** Database charset to use in creating database tables. */
+      define( 'DB_CHARSET', 'utf8mb4' );
+
+      /** The database collate type. Don't change this if in doubt. */
+      define( 'DB_COLLATE', '' );
+
+      /**#@+
+      * Authentication unique keys and salts.
+      *
+      * Change these to different unique phrases! You can generate these using
+      * the {@link https://api.wordpress.org/secret-key/1.1/salt/ WordPress.org secret-key service}.
+      *
+      * You can change these at any point in time to invalidate all existing cookies.
+      * This will force all users to have to log in again.
+      *
+      * @since 2.6.0
+      */
+      define( 'AUTH_KEY',         '{![hX r#k>R0kI]3XFHO4WC wd86cncT!ug]aPUQkw[pLT_<.t<:9`ZRY^/90,(l' );
+      define( 'SECURE_AUTH_KEY',  'YnB=> -(VF$*xD1^Jm3zVym=<gfQr1-.cJIN?;k hKa>{~fv90f[3,`7k48mbmS.' );
+      define( 'LOGGED_IN_KEY',    's@!QIq:[`l`p}Bu>%|sx1[kr[K=7_n8(+cXr|o_gI(CPg**VUz>Qr`kGW_Lv*%/3' );
+      define( 'NONCE_KEY',        '#hvy(~ulvJsGmzqlm.>6hw9SvZy~B>tR4&EMtu_4RpHRJn=pN+f9(u+(9rZx~B9V' );
+      define( 'AUTH_SALT',        'BBH_}rl/+qU)uvf.h#d@`}0/g7N|Tf}pI*M2Nb_A@%%BBQOuz>zjs?8JOp}2}0)c' );
+      define( 'SECURE_AUTH_SALT', 'JLDV?h.Kasf@d-N2f.+T0L&AN*1MKOP/1oZS3[Ag_/AQ-a_9f(5Oz`>.E#DH#(<*' );
+      define( 'LOGGED_IN_SALT',   '>Q%lWf>5G8Zh_C,P$vgx &6G.FM)6rb-YNCS;>c02J%RF|^kb]GS:3:w;@w{-ZO^' );
+      define( 'NONCE_SALT',       '5Mnfl+P9W0Fm1Vd_1,.B5^]6g:dm{/6@rkDCA5=TW-s KkQn.6G`o2W8O{Qa}Y}l' );
+
+      /**#@-*/
+
+      /**
+      * WordPress database table prefix.
+      *
+      * You can have multiple installations in one database if you give each
+      * a unique prefix. Only numbers, letters, and underscores please!
+      */
+      $table_prefix = 'wp1_';
+
+      /**
+      * For developers: WordPress debugging mode.
+      *
+      * Change this to true to enable the display of notices during development.
+      * It is strongly recommended that plugin and theme developers use WP_DEBUG
+      * in their development environments.
+      *
+      * For information on other constants that can be used for debugging,
+      * visit the documentation.
+      *
+      * @link https://wordpress.org/support/article/debugging-in-wordpress/
+      */
+      define( 'WP_DEBUG', false );
+
+      /* Add any custom values between this line and the "stop editing" line. */
+
+
+
+      /* That's all, stop editing! Happy publishing. */
+
+      /** Absolute path to the WordPress directory. */
+      if ( ! defined( 'ABSPATH' ) ) {
+              define( 'ABSPATH', __DIR__ . '/' );
+      }
+
+      /** Sets up WordPress vars and included files. */
+      require_once ABSPATH . 'wp-settings.php';
+
 packages:
   - httpd
   - httpd-tools
@@ -39,5 +141,6 @@ runcmd:
   - sudo setsebool -P httpd_use_nfs=1
   - sudo semanage fcontext -a -t httpd_sys_rw_content_t "/var/www/html(/.*)?"
   - sudo restorecon -Rv /var/www/html/
+  - sudo mv /run/wp-config.php /var/www/html/wp-config.php
 
 final_message: "The system is finally up, after $UPTIME seconds"
